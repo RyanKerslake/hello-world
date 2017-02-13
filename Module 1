@@ -1,0 +1,754 @@
+Option Explicit
+
+Public Sub CreateiLabApptMacro()
+
+'========================================================================================================================================
+'Description: This code will be run in Outlook using a Macro looking for a new email in the inbox of skicyclotron@mskcc.org with
+'             "accept/reject" in the subject line. It is triggered manually not automatically.
+'
+'             The code then begins to analyze the body of the email and extract important data that will be used to create a new
+'             appointment in the publically shared read-only calendar of the skicyclotron@mskcc.org account (SKI, Cyclotron)
+'
+'             This code is run when people outside of the RMIP Core request something and the emails have Action Required in the subject line.
+'
+'Author: Ryan Kerslake
+'Created: October 2015
+'Version: 1.0
+'========================================================================================================================================
+    
+    'The first part of the code that follows will parse the email looking for relevant matches to expected tags and store the data found
+    ' after those tags into variables
+    
+    'olMail2 will store all the email body formatted text and then strID takes the info and passes it to olMail and then later MailBod for simplicity later in the RegExp match sequence
+    Dim olMail As Outlook.MailItem
+    Dim MailBod As String
+    Set olMail = Application.ActiveExplorer().Selection(1)
+    MailBod = (olMail.Body)
+    
+    'Reg1, M, and M1 will be used to look for the tags that come before the Firstname and Lastname of the requester
+    Dim Reg1 As Object
+    Dim M1 As Object
+    Dim M As Object
+    
+    'These variables collect the Submatches of M for the Requester's name and store them for use in the calendar portion of the code
+    Dim FirstName As Variant
+    Dim LastName As Variant
+    Dim ThirdName As Variant
+    Dim FourthName As Variant
+    Dim RequesterName As String
+    Dim SendingName As String
+        
+    'This sets Reg1 as a RegExp object
+    Set Reg1 = CreateObject("VBScript.RegExp")
+    
+    'Regular Expression Decoder Ring Cheat Sheet
+    '\s = single invisible space
+    '\s* = invisible spaces
+    '\d* = matched digits
+    '\w* = matched alphanumeric
+    '\xA0 = single non-breaking space (represented by a degree symbol in formatting symbol language)
+    
+    
+    
+    
+    
+    
+    '************************************************************************************************************************************
+    'Capture the REQUESTER NAME with this section
+    'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+    'The submatches returned by the RegExp analysis are (Requester:) (FirstName) (Lastname) in the sequence of Submatches (1) (2) (3)
+    With Reg1
+        .Pattern = "((Requester:)\xA0\s(\w*[']*[-]*\w*)\s(\w*[']*[-]*\w*)\s(\w*[']*[-]*\w*)\s(\w*[']*[-]*\w*)\s(\w*[']*[-]*\w*))"
+        .Global = True
+    End With
+    
+    'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+    If Reg1.Test(MailBod) Then
+     
+        Set M1 = Reg1.Execute(MailBod)
+        For Each M In M1
+            'M.SubMatches(1) is the (Requester:) in the pattern
+            'M.SubMatches(2) is the first (\w*) in the pattern or the FirstName of the requester when returned
+            'M.SubMatches(3) is the second (\w*) in the pattern or the LastName of the requester when returned
+            'Trim would eliminate any leading or trailing spaces or non  \w symbols
+            FirstName = Trim(M.SubMatches(2))
+            LastName = Trim(M.SubMatches(3))
+            ThirdName = Trim(M.SubMatches(4))
+            FourthName = Trim(M.SubMatches(5))
+        Next
+    End If
+
+    'This mess of code is in place for the oddballs in the AD who have nonstandard names having spaces in the first or last names
+    If ThirdName = "" Then
+        'This simply combines the FirstName with the LastName with a space inserted between them
+        RequesterName = FirstName + Space(1) + LastName
+        SendingName = FirstName + Space(1) + LastName
+    End If
+    
+    If FourthName = "" And ThirdName <> "" Then
+        'This simply combines the FirstName with the LastName and the possible ThirdName with a space inserted between them (i.e. Jan-Phillip Van Meyer)
+        RequesterName = FirstName + Space(1) + LastName + Space(1) + ThirdName
+        SendingName = FirstName + Space(1) + ThirdName
+    End If
+    
+    If FourthName <> "" And ThirdName <> "" Then
+        'This simply combines the FirstName with the LastName and the possible ThirdName and FourthName with a space inserted between them (i.e. Jan-Phillip Van Meyer Someone)
+        RequesterName = FirstName + Space(1) + LastName + Space(1) + ThirdName + Space(1) + FourthName
+        SendingName = FirstName + Space(1) + FourthName
+    End If
+    
+    'Kishore, Carlos, and Outi's names outputs differently in iLab versus the AD so this needs to exist:
+    If RequesterName = "Naga Vara Kishore Pillarsetty" Then
+        RequesterName = "Nagavarakishore Pillarsetty"
+        FirstName = "Kishore"
+        SendingName = "Nagavarakishore Pillarsetty"
+    End If
+    If RequesterName = "Carlos Perez" Then
+        RequesterName = "Carlos Perez-Medina"
+        FirstName = "Carlos"
+        SendingName = "Carlos Perez-Medina"
+    End If
+    If RequesterName = "Outi Keinaenen" Then
+        RequesterName = "Outi Keinanen"
+        FirstName = "Outi"
+        SendingName = "Outi Keinanen"
+    End If
+    If RequesterName = "Camila Machado" Then
+        RequesterName = "Camila Longo Machado"
+        FirstName = "Camila"
+        SendingName = "Camila Longo Machado"
+    End If
+    '************************************************************************************************************************************
+    
+    
+    
+    
+    
+    '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    'Capture the SERVICE NAME with this section
+    'The code above related to Reg1 is now repeated for Reg2, but now the target tag is the Service name (i.e. 89Zr, 13N or 18F)
+    'Reg2, N, and N1 will be used to look for the tag for Service name and the matches that come after
+    Dim Reg2 As Object
+    Dim N1 As Object
+    Dim N As Object
+    
+    'This variable collects the Submatch of N for the Service name and stores it for use in the calendar portion of the code
+    Dim ServiceName As String
+    
+    'This sets Reg2 as a RegExp object
+    Set Reg2 = CreateObject("VBScript.RegExp")
+    
+    'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+    'The submatches returned by the RegExp analysis are (Service name:) (18F/89Zr/13N) in the sequence of Submatches (1) (2)
+    With Reg2
+        .Pattern = "((Service name:)\xA0\s*(\w*))"
+        .Global = True
+    End With
+    
+    'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+    If Reg2.Test(MailBod) Then
+     
+        Set N1 = Reg2.Execute(MailBod)
+        For Each N In N1
+            'N.SubMatches(1) is the (Service name:) in the pattern
+            'N.SubMatches(2) is the first (\w*) in the pattern or the 18F/89Zr/13N in the email
+            'Trim would eliminate any leading or trailing spaces or non  \w symbols
+            ServiceName = Trim(N.SubMatches(2))
+        Next
+    End If
+    '++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+   
+   
+   
+   
+   
+    '------------------------------------------------------------------------------------------------------------------------------------
+    'Capture the REQUESTED ACTIVITY with this section
+    'The code above related to Reg2 is now repeated for Reg3, but now the target tag is the "Requested Activity, mCi:" (an integer is matched)
+    'Reg3, O, and O1 will be used to look for the tag for Requested Activity, mCi: and the matches that come after
+    Dim Reg3 As Object
+    Dim O1 As Object
+    Dim O As Object
+    
+    'This variable collects the Submatch of O for the Requested Activity and stores it for use in the calendar portion of the code
+    Dim RequestedActivity As Variant
+    
+    'This sets Reg3 as a RegExp object
+    Set Reg3 = CreateObject("VBScript.RegExp")
+    
+    'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+    'The submatches returned by the RegExp analysis are (Requested Activity, mCi:) (some integer) in the sequence of Submatches (1) (2)
+    With Reg3
+        .Pattern = "((Requested Activity, mCi:)\xA0\s*(\w*))"
+        .Global = True
+    End With
+    
+    'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+    If Reg3.Test(MailBod) Then
+     
+        Set O1 = Reg3.Execute(MailBod)
+        For Each O In O1
+            'O.SubMatches(1) is the (Requested Activity (mCi):) in the pattern
+            'O.SubMatches(2) is the first (\w*) in the pattern or the 18F/89Zr/13N in the email
+            'Trim would eliminate any leading or trailing spaces or non  \w symbols
+            RequestedActivity = Trim(O.SubMatches(2))
+        Next
+    End If
+    '------------------------------------------------------------------------------------------------------------------------------------
+   
+   
+   
+   
+   
+    '^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    'Capture the REQUESTED DATE with this section
+    'The code above related to Reg3 is now repeated for Reg4, but now the target tag is the "Requested Date for Delivery:"
+    
+    'Reg4, P, and P1 will be used to look for the tag for Requested Date for Delivery: and the matches that come after
+    Dim Reg4 As Object
+    Dim P1 As Object
+    Dim P As Object
+    
+    'These variables collect the Submatches of P for the Requested Date for Delivery and store them for use for a later part of the code
+    Dim RequestedDateMonth As Variant
+    Dim RequestedDateDay As Variant
+    Dim RequestedDateYear As Variant
+    
+    'This sets Reg4 as a RegExp object
+    Set Reg4 = CreateObject("VBScript.RegExp")
+    
+    'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+    'The submatches from this RegExp analysis are (Requested Date for Delivery:) (Month) (Date) (Year) in the sequence (1) (2)(3) (4)
+    With Reg4
+        .Pattern = "((Requested Date for Delivery:)\xA0\s*(\w*)\-(\w*)\-(\w*))"
+        .Global = True
+    End With
+    
+    'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+    If Reg4.Test(MailBod) Then
+        Set P1 = Reg4.Execute(MailBod)
+        For Each P In P1
+            'P.SubMatches(1) is the (Requested Date for Delivery:) in the pattern
+            'P.SubMatches(2) is the first (\w*) in the pattern or the Month in the email
+            'P.SubMatches(3) is the second (\w*) in the pattern or the Day in the email
+            'P.SubMatches(4) is the third (\w*) in the pattern or the Year in the email
+            'Trim would eliminate any leading or trailing spaces or non  \w symbols
+            RequestedDateYear = Trim(P.SubMatches(2))
+            RequestedDateMonth = Trim(P.SubMatches(3))
+            RequestedDateDay = Left$(Trim(P.SubMatches(4)), 2)
+
+        Next
+    End If
+    
+'' Taken out on 29 Apr 16 since format of emails changed
+'    'The following code stupidly converts the month name to a numerical value since I couldn't find an easiser function to do this
+'    If RequestedDateMonth = "January" Then
+'        RequestedDateMonth = "01"
+'    End If
+'    If RequestedDateMonth = "February" Then
+'        RequestedDateMonth = "02"
+'    End If
+'    If RequestedDateMonth = "March" Then
+'        RequestedDateMonth = "03"
+'    End If
+'    If RequestedDateMonth = "April" Then
+'        RequestedDateMonth = "04"
+'    End If
+'    If RequestedDateMonth = "May" Then
+'        RequestedDateMonth = "05"
+'    End If
+'    If RequestedDateMonth = "June" Then
+'        RequestedDateMonth = "06"
+'    End If
+'    If RequestedDateMonth = "July" Then
+'        RequestedDateMonth = "07"
+'    End If
+'    If RequestedDateMonth = "August" Then
+'        RequestedDateMonth = "08"
+'    End If
+'    If RequestedDateMonth = "September" Then
+'        RequestedDateMonth = "09"
+'    End If
+'    If RequestedDateMonth = "October" Then
+'        RequestedDateMonth = "10"
+'    End If
+'    If RequestedDateMonth = "November" Then
+'        RequestedDateMonth = "11"
+'    End If
+'    If RequestedDateMonth = "December" Then
+'        RequestedDateMonth = "12"
+'    End If
+'
+   
+    'This code then combines the date segments into a format like 10/15/2015
+    Dim RequestedDateFull As String
+    Dim RequestedDateCompare As String
+    Dim Slash As String
+    Slash = "/"
+    
+    'This section puts the date together close to what will be used in the calendar invite with all the times as needed
+    If ServiceName = "89Zr" Then
+    RequestedDateFull = RequestedDateDay & Slash & RequestedDateMonth & Slash & RequestedDateYear & Space(1) & "02:00:00 PM"
+    RequestedDateCompare = RequestedDateDay & Slash & RequestedDateMonth & Slash & RequestedDateYear & Space(1) & "02:00 PM"
+    Else: RequestedDateFull = RequestedDateDay & Slash & RequestedDateMonth & Slash & RequestedDateYear & Space(1) & "09:00:00 AM"
+    RequestedDateCompare = RequestedDateDay & Slash & RequestedDateMonth & Slash & RequestedDateYear & Space(1) & "09:00 AM"
+    End If
+    If ServiceName = "18F" Then
+    RequestedDateFull = RequestedDateDay & Slash & RequestedDateMonth & Slash & RequestedDateYear & Space(1) & "10:00:00 AM"
+    RequestedDateCompare = RequestedDateDay & Slash & RequestedDateMonth & Slash & RequestedDateYear & Space(1) & "10:00 AM"
+    End If
+    
+    'This converts that from its format to what the calendar item will need
+    Dim Datey As Date
+    Dim DateyCompare As Date
+    Datey = (CDate(RequestedDateFull))
+    DateyCompare = (CDate(RequestedDateCompare))
+    Dim DateCompare As String
+    DateCompare = Format$(DateyCompare, "dd/mmm/yyyy hh:mm AMPM")
+    '^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    
+    
+    
+    
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    'Capture the UNIQUE ID with this section
+    'The code above related to Reg4 is now repeated for Reg5, but now the target tag is the unique ID Service ID (i.e. RMIP-RK-100)
+    
+    'Reg5, Q, and Q1 will be used to look for the tag for Service ID and the match that comes after
+    Dim Reg5 As Object
+    Dim Q1 As Object
+    Dim Q As Object
+    
+    'This variable collects the Submatch of Q for the Service ID and stores it for use in the calendar portion of the code
+    Dim UniqueID As String
+    
+    'This sets Reg5 as a RegExp object
+    Set Reg5 = CreateObject("VBScript.RegExp")
+    
+    'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+    'The submatches returned by the RegExp analysis are (Service ID:) (RMIP-RK-100) in the sequence of Submatches (1) (2)
+    With Reg5
+        .Pattern = "((Service ID:)\xA0\s*(\w*[-]\w*[-]\w*))"
+        .Global = True
+    End With
+    
+    'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+    If Reg5.Test(MailBod) Then
+     
+        Set Q1 = Reg5.Execute(MailBod)
+        For Each Q In Q1
+            'Q.SubMatches(1) is the (Service ID:) in the pattern
+            'Q.SubMatches(2) is the (\w*[-]\w*[-]\w*) in the pattern or the RMIP-RK-100
+            UniqueID = Q.SubMatches(2)
+        Next
+    End If
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+    
+    
+    
+    
+    
+    '####################################################################################################################################
+    'Capture the COMMENTS with this section
+    'The code above related to Reg5 is now repeated for Reg6, but now the target tag is the Optional Comments: (the match is everything after that)
+    
+    'Reg6, R, and R1 will be used to look for the tag for Optional Comments: and the match that comes after
+    Dim Reg6 As Object
+    Dim R1 As Object
+    Dim R As Object
+    
+    'This variable collects the Submatch of R for the Comments and stores it for use in the calendar portion of the code
+    Dim Comments As String
+    
+    'This sets Reg2 as a RegExp object
+    Set Reg6 = CreateObject("VBScript.RegExp")
+    
+    'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+    'The submatches returned by the RegExp analysis are (Optional Comments:) (the text) (the three trailing spaces) in the sequence of Submatches (1) (2) (3)
+    With Reg6
+        .Pattern = "((Optional Comments:)\xA0\s(.+))"
+        .Global = True
+    End With
+    
+    'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+    If Reg6.Test(MailBod) Then
+     
+        Set R1 = Reg6.Execute(MailBod)
+        For Each R In R1
+            'R.SubMatches(1) is the (Optional Comments:) in the pattern
+            'R.SubMatches(2) is the (text) in the pattern or the Comments
+            'R.SubMatches(3) is the (\s\s) in the pattern
+            Comments = R.SubMatches(2)
+        Next
+    End If
+    '######################################################################################################################################
+    
+    
+    
+    
+    
+    '||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+    'Set the pickup location with this section
+    Dim Location As String
+    If ServiceName = "89Zr" Then
+        Location = "Z-2034"
+    Else: Location = "S-C20"
+    End If
+    '||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+    
+    
+    
+    
+    
+    
+    '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    'The following code will begin the process of populating the SKI, Cyclotron Shared Calendar
+    
+    'Note: When I figure out how to look for the same service type requests already reserved on the calendar
+    '      I'll update the appropriate reservation details to add the new total needed and put both user names in the subject and body
+    
+    'This code will check for categories for 18F, 89Zr, and 13N and create them if they are not there
+    'Dim categoryList As Categories
+    'categoryList = Application.Session.Categories
+    'Dim c As Category
+    'Dim i As Integer
+    'For i = 1 To categoryList.Count
+    'c = categoryList(i)
+    '    If c.Name.Equals(ServiceName) Then
+    '        Return
+    '    End If
+    'Next
+    'categoryList.Add(ServiceName, Outlook.OlCategoryColor.olCategoryColorDarkBlue)
+    
+    'Add code here to check for pre-existing orders for that Service name already that day and increment by the new amount if necessary
+    'For now this is the placeholder:
+    Dim TotalActivity As String
+    
+    
+    'See if there is already an appointment at this time
+    Dim AppointmentAtThisTime As String
+    AppointmentAtThisTime = "0"
+    
+    Dim olApp2 As Object ' Outlook.Application
+    Dim startDate2 As String
+    Dim endDate2 As String
+    Dim appts2 As Object ' Outlook.Items
+    Dim dateFilter2 As String
+    Dim appt2 As Object ' Outlook.AppointmentItem
+    Dim i2 As Long
+ 
+    Const olFolderCalendar = 9
+ 
+    'edit to specify start and end date to be searched
+    startDate2 = DateAdd("h", -1, DateCompare)
+    startDate2 = Format$(startDate2, "dd/mmm/yyyy hh:mm AMPM")
+    endDate2 = DateAdd("h", 2, DateCompare)
+    endDate2 = Format$(endDate2, "dd/mmm/yyyy hh:mm AMPM")
+ 
+    Set olApp2 = CreateObject("Outlook.Application")
+ 
+    Set appts2 = olApp2.Session.GetDefaultFolder(olFolderCalendar).Items
+ 
+    'filter for appointments at same time as RequestedTime
+    If ServiceName = "89Zr" Then
+    dateFilter2 = "[Start] >= " & Quote(startDate2) & _
+    " AND [End] <= " & Quote(endDate2)
+    End If
+    If ServiceName = "13N" Then
+    dateFilter2 = "[Start] >= " & Quote(startDate2) & _
+    " AND [End] <= " & Quote(endDate2)
+    Else: dateFilter2 = "[Start] >= " & Quote(startDate2) & _
+    " AND [End] <= " & Quote(endDate2)
+    End If
+    Set appts2 = appts2.Restrict(dateFilter2)
+    
+    ' check each appt body for matching string
+    
+    Dim Body2 As String
+    Dim Subject2 As String
+    
+    For i2 = appts2.Count To 1 Step -1
+        Set appt2 = appts2.Item(i2)
+        If InStr(appt2.Subject, ServiceName) > 0 Then ' found
+            'Enter functionality here to find details about the appointment with that UniqueID in its body
+            AppointmentAtThisTime = "1"
+            Body2 = appt2.Body
+            Subject2 = appt2.Subject
+            
+            
+            
+            
+            
+            
+            
+            Dim Reg7 As Object
+            Dim S1 As Object
+            Dim S As Object
+    
+            Dim OldmCi As String
+    
+            'This sets Reg2 as a RegExp object
+            Set Reg7 = CreateObject("VBScript.RegExp")
+    
+            'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+            'The submatches returned by the RegExp analysis are (Optional Comments:) (the text) (the three trailing spaces) in the sequence of Submatches (1) (2) (3)
+            If ServiceName = "18F" Then
+            With Reg7
+                .Pattern = "((18F - )\xA0*\s*(\w*))"
+                .Global = True
+            End With
+            End If
+            
+            If ServiceName = "13N" Then
+            With Reg7
+                .Pattern = "((13N - )\xA0*\s*(\w*))"
+                .Global = True
+            End With
+            End If
+            
+            If ServiceName = "89Zr" Then
+            With Reg7
+                .Pattern = "((89Zr - )\xA0*\s*(\w*))"
+                .Global = True
+            End With
+            End If
+            
+    
+            'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+            If Reg7.Test(Subject2) Then
+     
+            Set S1 = Reg7.Execute(Subject2)
+            For Each S In S1
+                'R.SubMatches(1) is the (Optional Comments:) in the pattern
+                'R.SubMatches(2) is the (text) in the pattern or the Comments
+                'R.SubMatches(3) is the (\s\s) in the pattern
+            OldmCi = S.SubMatches(2)
+            Next
+            End If
+            
+            Dim Reg8 As Object
+            Dim T1 As Object
+            Dim T As Object
+            
+            Dim OldNames As String
+            
+            'This sets Reg8 as a RegExp object
+            Set Reg8 = CreateObject("VBScript.RegExp")
+            
+            'This loop sets the pattern that the RegExp item will look for and .Global being true means it looks for multiple potential copies
+            'The submatches returned by the RegExp analysis are (ServiceName - #### mCi ) ((all of the names and characters after that)) in the sequence of Submatches (1) (2)
+            If ServiceName = "18F" Then
+            With Reg8
+                .Pattern = "((18F - )\xA0*\s*(\w*)\xA0*\s*(\w*)\xA0*\s*(.+))"
+                .Global = True
+            End With
+            End If
+            
+            If ServiceName = "13N" Then
+            With Reg8
+                .Pattern = "((13N - )\xA0*\s*(\w*)\xA0*\s*(\w*)\xA0*\s*(.+))"
+                .Global = True
+            End With
+            End If
+            
+            If ServiceName = "89Zr" Then
+            With Reg8
+                .Pattern = "((89Zr - )\xA0*\s*(\w*)\xA0*\s*(\w*)\xA0*\s*(.+))"
+                .Global = True
+            End With
+            End If
+            
+            
+            'This If statement feeds the text from the email body across the pattern to see if there is a match or multiple matches
+            If Reg8.Test(Subject2) Then
+     
+            Set T1 = Reg8.Execute(Subject2)
+            For Each T In T1
+                'R.SubMatches(1) is the (Optional Comments:) in the pattern
+                'R.SubMatches(2) is the (text) in the pattern or the Comments
+                'R.SubMatches(3) is the (\s\s) in the pattern
+            OldNames = T.SubMatches(4)
+            Next
+            End If
+            
+            appt2.Delete
+            
+        End If
+        Next
+    
+            
+            
+            
+    
+    'If UniqueID appears in another calendar appointment email Core that iLab request ID already existed in Outlook and there appears to be a problem
+    Dim olApp As Object ' Outlook.Application
+    Dim startDate As String
+    Dim endDate As String
+    Dim appts As Object ' Outlook.Items
+    Dim dateFilter As String
+    Dim appt As Object ' Outlook.AppointmentItem
+    Dim i As Long
+ 
+    ' edit to specify start and end date to be searched
+    startDate = Date - 365
+    endDate = Date + 365
+ 
+    Set olApp = CreateObject("Outlook.Application")
+ 
+    Set appts = olApp.Session.GetDefaultFolder(olFolderCalendar).Items
+ 
+    ' filter for December appointments only
+    dateFilter = "[Start] >= " & Quote(startDate & " 12:00 AM") & _
+    " AND [End] <= " & Quote(endDate & " 11:59 PM")
+    Set appts = appts.Restrict(dateFilter)
+ 
+    Dim UniqueWasAlreadyThere As String
+    UniqueWasAlreadyThere = "0"
+ 
+    ' check each appt body for matching string
+    For i = appts.Count To 1 Step -1
+        Set appt = appts.Item(i)
+        If InStr(appt.Body, UniqueID) > 0 Then ' found
+            'Enter functionality here to find details about the appointment with that UniqueID in its body
+            UniqueWasAlreadyThere = "1"
+        End If
+    Next
+    
+    If UniqueWasAlreadyThere = "0" And AppointmentAtThisTime = "1" Then
+    
+        'Start Calendar variable definition
+        Dim myItem1 As Object
+        Dim myRequiredAttendee1 As Outlook.Recipient
+        Dim myOptionalAttendee1 As Outlook.Recipient
+        Set myItem1 = Application.CreateItem(olAppointmentItem)
+        myItem1.MeetingStatus = olMeeting
+        
+        Dim OldmCiDouble As Double
+        Dim RequestedActivityDouble As Double
+        Dim TotalActivityDouble As Double
+        
+        OldmCiDouble = OldmCi
+        RequestedActivityDouble = RequestedActivity
+        
+        TotalActivityDouble = RequestedActivityDouble + OldmCiDouble
+    
+        'Below should change to specify how much for each requester if there are multiple in addition to total
+        myItem1.Subject = ServiceName & " - " & TotalActivityDouble & " mCi " & OldNames & " (" & FirstName & "." & RequestedActivity & ")"
+    
+        'Specifics
+        myItem1.Location = Location
+        myItem1.Start = Datey
+        myItem1.Duration = 60
+    
+        'Below should change to specify how much for each requester if there are multiple in addition to total
+        If Comments <> "" Then
+        myItem1.Body = Body2 & vbCrLf & vbCrLf & "Request ID: " & UniqueID & Space(1) & vbCrLf & RequestedActivity & " mCi of " & ServiceName & " for " & RequesterName & Space(1) & vbCrLf & "Comments: " & Comments & vbCrLf & vbCrLf
+        Else: myItem1.Body = Body2 & vbCrLf & vbCrLf & "Request ID: " & UniqueID & Space(1) & vbCrLf & RequestedActivity & " mCi of " & ServiceName & " for " & RequesterName & Space(1) & vbCrLf & vbCrLf
+        End If
+    
+        'Catogorize it
+        myItem1.Categories = ServiceName
+    
+        'Set the requester as the recipient
+        Set myRequiredAttendee1 = myItem1.Recipients.Add(SendingName)
+        myRequiredAttendee1.Type = olRequired
+        If ServiceName = "18F" Then
+        Set myOptionalAttendee1 = myItem1.Recipients.Add("Sherron Hicks")
+        myOptionalAttendee1.Type = olOptional
+        End If
+        If ServiceName = "13N" Then
+        Set myOptionalAttendee1 = myItem1.Recipients.Add("Sherron Hicks")
+        myOptionalAttendee1.Type = olOptional
+        End If
+    
+        'Send it
+        myItem1.Send
+        '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+ 
+    End If
+ 
+    If UniqueWasAlreadyThere = "0" And AppointmentAtThisTime = "0" Then
+    
+        'Start Calendar variable definition
+        Dim myItem As Object
+        Dim myRequiredAttendee As Outlook.Recipient
+        Dim myOptionalAttendee As Outlook.Recipient
+        Set myItem = Application.CreateItem(olAppointmentItem)
+        myItem.MeetingStatus = olMeeting
+        
+        TotalActivity = RequestedActivity
+    
+        'Below should change to specify how much for each requester if there are multiple in addition to total
+        myItem.Subject = ServiceName & " - " & TotalActivity & " mCi (" & FirstName & "." & RequestedActivity & ")"
+    
+        'Specifics
+        myItem.Location = Location
+        myItem.Start = Datey
+        myItem.Duration = 60
+    
+        'Below should change to specify how much for each requester if there are multiple in addition to total
+        If Comments <> "" Then
+        myItem.Body = "Request ID: " & UniqueID & Space(1) & vbCrLf & RequestedActivity & " mCi of " & ServiceName & " for " & RequesterName & Space(1) & vbCrLf & "Comments: " & Comments & vbCrLf & vbCrLf
+        Else: myItem.Body = "Request ID: " & UniqueID & Space(1) & vbCrLf & RequestedActivity & " mCi of " & ServiceName & " for " & RequesterName & Space(1) & vbCrLf & vbCrLf
+        End If
+    
+        'Catogorize it
+        myItem.Categories = ServiceName
+    
+        'Set the requester as the recipient
+        Set myRequiredAttendee = myItem.Recipients.Add(SendingName)
+        myRequiredAttendee.Type = olRequired
+        If ServiceName = "18F" Then
+        Set myOptionalAttendee = myItem.Recipients.Add("Sherron Hicks")
+        myOptionalAttendee.Type = olOptional
+        End If
+        If ServiceName = "13N" Then
+        Set myOptionalAttendee = myItem.Recipients.Add("Sherron Hicks")
+        myOptionalAttendee.Type = olOptional
+        End If
+        
+        'Send it
+        myItem.Send
+        '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+ 
+    End If
+ 
+ 
+    'Reset all object variables to null
+    Set M = Nothing
+    Set M1 = Nothing
+    Set Reg1 = Nothing
+    Set N = Nothing
+    Set N1 = Nothing
+    Set Reg2 = Nothing
+    Set O = Nothing
+    Set O1 = Nothing
+    Set Reg3 = Nothing
+    Set P = Nothing
+    Set P1 = Nothing
+    Set Reg4 = Nothing
+    Set Q = Nothing
+    Set Q1 = Nothing
+    Set Reg5 = Nothing
+    Set R = Nothing
+    Set R1 = Nothing
+    Set Reg6 = Nothing
+ 
+End Sub
+
+'Planned Revisions:
+'1. Check for pre-existing appointments and merge new appointment with that one
+'2. Make RMIP Core members delegates of the SKI, Cyclotron Calendar - Members were given Editor permissions on 04 Nov 2015.
+'3. When cancelation happens delete the part of the appointment that that iLab request is related to (Outlook rule triggers: "has been cancelled" is in the subject; no RE: Re: or FW: in the subject) (Match tag: Service request) (Match after: RMIP-\w*-\w*) Use that to delete the details for that request
+'4. Mark each request on an appointment as COMPLETED in the body when (Outlook rule triggers: "has been completed"is in the subject; no RE: Re: or FW: in the subject) and when all lines are completed as an end test in VBA in this module if all are COMPLETED change category to 18F Completed, 89Zr Completed, or 13N Completed respectively and set their colors to shades of gray
+'5.
+
+'Revision History
+'1.0 Original Rollout on 29 October 2015
+
+Private Function Quote(MyText)
+' from Sue Mosher's excellent book "Microsoft Outlook Programming"
+ Quote = Chr(34) & MyText & Chr(34)
+End Function
